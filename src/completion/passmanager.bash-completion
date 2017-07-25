@@ -17,7 +17,7 @@ _passmanager_complete_path () {
     # if only one match and auto-expand, return full path
     autoexpand=${1:-0}
     if [[ $autoexpand -eq 1 && $((${#paths[@]} + ${#COMPREPLY[@]})) -eq 1 ]]; then
-        COMPREPLY+=("$paths")
+        [[ ${#paths[@]} -eq 1 ]] && COMPREPLY+=("$paths")
         return 0
     fi
 
