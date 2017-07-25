@@ -1,0 +1,107 @@
+# completion file for bash
+
+# This file is licensed under the GPLv2+. Please see COPYING for more information.
+# Based on pass bash completion from Jason A. Donenfeld <Jason@zx2c4.com> and
+# Brian Mattern <rephorm@rephorm.com>
+
+_passmanager_complete_path () {
+    [[ -f "$INDEX" ]] || return 0
+
+    local IFS=$'\n'
+    # first extract all matching paths
+    local paths=() path
+    while read -r path; do
+        paths+=($(compgen -W "$path" -- "$cur"))
+    done <<< "$(cat "$INDEX" | $GPG -d "${GPG_OPTS[@]}" | sed -rn 's/^(.*)\t.*$/\1/p' | sort -u)"
+    
+    # if only one match and auto-expand, return full path
+    autoexpand=${1:-0}
+    if [[ $autoexpand -eq 1 && $((${#paths[@]} + ${#COMPREPLY[@]})) -eq 1 ]]; then
+        COMPREPLY+=("$paths")
+        return 0
+    fi
+
+    # otherwise cut at the next directory / end of string
+    local pathre="$(sed -r 's/([./])/\\\1/g' <<< "$cur")"
+    local dirmatch=0
+    for path in "${paths[@]}"; do
+        local tmp="$(sed -rn 's/^('"$pathre"'[^/]*(\/|$)).*/\1/p' <<< "$path")"
+        if [[ -n "$tmp" ]]; then
+            COMPREPLY+=($(compgen -W "$tmp" -- "$cur"))
+            [[ "$tmp" == "$path" ]] || dirmatch=1
+        fi
+    done
+
+    # only add space at the end if there is a single match which is not a directory
+    [[ ${#COMPREPLY[@]} -gt 1 || dirmatch -eq 1 ]] && compopt -o nospace
+}
+
+_passmanager_complete_id () {
+    [[ -f "$INDEX" ]] || return 0
+
+    # read all ids
+    local id
+    while read -r id; do
+        COMPREPLY+=($(compgen -W "$id" -- "$cur"))
+    done <<< "$(cat "$INDEX" | $GPG -d "${GPG_OPTS[@]}" | sed -rn 's/^.*\t(.*)$/\1/p' | sort)"
+}
+
+_passmanager_complete_keys () {
+    # Extract names and email addresses from gpg --list-keys
+    local IFS=$'\n'
+    local keys="$($GPG --list-secret-keys --with-colons | cut -d : -f 10 | sort -u | sed '/^$/d')"
+    COMPREPLY+=($(compgen -W "${keys}" -- "$cur"))
+}
+
+_passmanager() {
+    COMPREPLY=()
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    local commands="init ls find show generate edit rm mv cp path git help version"
+
+    # GPG config
+    local INDEX="${PASSMANAGER_DIR:-${XDG_DATA_HOME:-${HOME}/.local/share}/passmanager/index.gpg}"
+    local GPG="${PASSMANAGER_GPG:-$(command -v gpg2)}" || GPG="$(command -v gpg)" || return 0
+    local GPG_OPTS=(${PASSMANAGER_GPG_OPTS:-} "--quiet" "--yes" "--compress-algo=none" "--no-encrypt-to")
+    [[ -n "${GPG_AGENT_INFO:-}" || $GPG == "gpg2" ]] && GPG_OPTS+=("--batch" "--use-agent")
+    export GPG_TTY="${GPG_TTY:-$(tty 2> /dev/null)}"
+
+    if [[ $COMP_CWORD -gt 1 ]]; then
+        local lastarg="${COMP_WORDS[$COMP_CWORD-1]}"
+        case "${COMP_WORDS[1]}" in
+            init)
+                COMPREPLY+=($(compgen -W "-f --force" -- "$cur"))
+                _passmanager_complete_keys
+                ;;
+            ls|list|edit)
+                _passmanager_complete_path 1
+                ;;
+            show|-*)
+                COMPREPLY+=($(compgen -W "-c --clip" -- "$cur"))
+                _passmanager_complete_path 1
+                ;;
+            generate)
+                COMPREPLY+=($(compgen -W "-n --no-symbols -f --force -i --in-place" -- "$cur"))
+                _passmanager_complete_path
+                ;;
+            cp|copy|mv|rename)
+                COMPREPLY+=($(compgen -W "-f --force" -- "$cur"))
+                _passmanager_complete_path
+                ;;
+            rm|remove|delete)
+                COMPREPLY+=($(compgen -W "-f --force" -- "$cur"))
+                _passmanager_complete_path 1
+                ;;
+            path)
+                _passmanager_complete_id
+                ;;
+            git)
+                COMPREPLY+=($(compgen -W "init push pull config log reflog rebase remote" -- "$cur"))
+                ;;
+        esac
+    else
+        COMPREPLY+=($(compgen -W "${commands}" -- "$cur"))
+        _passmanager_complete_path 1
+    fi
+}
+
+complete -o filenames -F _passmanager passmanager
