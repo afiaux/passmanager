@@ -47,7 +47,8 @@ USE_GIT="${PASSMANAGER_USE_GIT:-$USE_GIT}"
 [[ $USE_GIT -eq 1 ]] && (hash git 2> /dev/null || fatal "git not found")
 
 # editor: default to vi
-EDIT=${PASSMANAGER_EDITOR:-${EDITOR:-vi}}
+EDIT=(${PASSMANAGER_EDITOR:-${EDITOR:-vi}})
+([[ ${EDIT[0]} == vim ]] || [[ ${EDIT[0]} == nvim ]]) && EDIT+=(-c "set nobackup" -c "set noundofile")
 
 # default password length
 PASS_LENGTH="${PASSMANAGER_PASS_LENGTH:-25}"
@@ -283,7 +284,7 @@ cmd_help() {
 	    $PROGRAM find pass-names...
 	        List passwords that match pass-names.
 	    $PROGRAM edit pass-name
-	        Insert a new password or edit an existing password using ${EDIT}.
+	        Insert a new password or edit an existing password using ${EDIT[0]}
 	    $PROGRAM generate [--no-symbols,-n] [--in-place,-i | --force,-f] pass-name [pass-length]
 	        Generate a new password of pass-length (or $PASS_LENGTH if unspecified).
 	        Optionally generate a password without symbols [-n].
@@ -525,7 +526,7 @@ cmd_edit() {
 
     # check if the password file was edited and that it is not empty
     local before_edit="$(cat "$tmp" | digest)"
-    "$EDIT" "$tmp" || fatal "$EDIT returned an error: $?"
+    "${EDIT[@]}" "$tmp" || fatal "${EDIT[@]} returned an error: $?"
     [[ $new_pass -eq 1 || "$(cat "$tmp" | digest)" != "$before_edit" ]] || \
         fatal "password file was not modified"
     [[ $(cat "$tmp" | grep -v '^$' | wc -l) -gt 0 ]] || fatal "edited password file was empty"
